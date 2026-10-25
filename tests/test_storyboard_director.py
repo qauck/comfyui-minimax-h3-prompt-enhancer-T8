@@ -1,5 +1,6 @@
 """CPU request contracts only: no LLM compliance or rendered-quality claims."""
 from visual_style_baseline_projection import without_style_signature, without_style_inputs
+from segment_baseline_projection import project_segment_bytes, without_segment_inputs, without_segment_outputs
 import ast
 import asyncio
 import copy
@@ -143,13 +144,14 @@ class StoryboardDirectorTests(unittest.TestCase):
             namespace = dict(vars(module))
             exec(compile(ast.Module(body=[method], type_ignores=[]), filename, "exec"), namespace)
             old_schema = namespace["define_schema"](cls)
-            inputs = without_style_inputs(cls.define_schema().inputs)
+            inputs = without_segment_inputs(without_style_inputs(cls.define_schema().inputs)) if module is h3 else without_style_inputs(cls.define_schema().inputs)
             if module is h3:
                 self.assertEqual(inputs[-1].id, "visual_marker_config")
                 inputs = inputs[:-1]
             self.assertEqual([x.id for x in inputs], [x.id for x in old_schema.inputs] + [SOCKET])
             self.assertEqual([x.as_dict() for x in inputs[:-1]], [x.as_dict() for x in old_schema.inputs])
-            self.assertEqual([x.as_dict() for x in cls.define_schema().outputs], [x.as_dict() for x in old_schema.outputs])
+            published = without_segment_outputs(cls.define_schema().outputs) if module is h3 else list(cls.define_schema().outputs)
+            self.assertEqual([x.as_dict() for x in published], [x.as_dict() for x in old_schema.outputs])
         package = sys.modules[h3.__package__]
         extension = asyncio.run(package.comfy_entrypoint())
         ids = [cls.define_schema().node_id for cls in asyncio.run(extension.get_node_list())]
@@ -468,7 +470,11 @@ class StoryboardDirectorTests(unittest.TestCase):
         for path in paths:
             if path.endswith((".json", ".js", ".py")):
                 expected = subprocess.check_output(["git", "show", BASELINE + ":" + path], cwd=GIT_ROOT).replace(b"\r\n", b"\n")
-                self.assertEqual((ROOT / path).read_bytes().replace(b"\r\n", b"\n"), expected, path)
+                current = (ROOT / path).read_bytes().replace(b"\r\n", b"\n")
+                if path == "web/js/minimax_h3_prompt_enhancer.js":
+                    # The segment controls are the only reviewed addition to this enhancer script.
+                    current = project_segment_bytes(current)
+                self.assertEqual(current, expected, path)
 
 
 if __name__ == "__main__":

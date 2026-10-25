@@ -71,14 +71,15 @@ class FilmWorkflowTests(unittest.TestCase):
         longform_ids = [item.id for item in creative.T8LongFormPlanner.define_schema().inputs]
         storyboard_ids = [item.id for item in creative.T8StoryboardPack.define_schema().inputs]
         self.assertEqual(
-            h3_ids[-13:-10],
+            h3_ids[-15:-12],
             ["performance_director_config", "provider_config", "character_performance_bible"],
         )
         self.assertEqual(
             seedance_ids[-9:-6],
             ["performance_director_config", "provider_config", "character_performance_bible"],
         )
-        self.assertEqual(h3_ids[-6:], ["director_skill", "quality_mode", "creation_mode", "combat_camera_config", "speech_reference", "storyboard_director_config"])
+        self.assertEqual(h3_ids[-8:], ["director_skill", "quality_mode", "creation_mode", "combat_camera_config",
+                                       "segment_count", "segment_split_mode", "speech_reference", "storyboard_director_config"])
         self.assertEqual(seedance_ids[-6:], ["director_skill", "quality_mode", "creation_mode", "combat_camera_config", "speech_reference", "storyboard_director_config"])
         self.assertEqual(longform_ids[-2:], ["film_project_state", "contract_failure_policy"])
         self.assertLess(longform_ids.index("provider_config"), longform_ids.index("film_project_state"))
@@ -232,6 +233,9 @@ class FilmWorkflowTests(unittest.TestCase):
                 self.assertEqual(ids.pop(), "visual_marker_config")
             self.assertEqual(ids.pop(), "storyboard_director_config")
             self.assertEqual(ids.pop(), "speech_reference")
+            if node is h3.MiniMaxH3PromptEnhancer:
+                self.assertEqual(ids.pop(), "segment_split_mode")
+                self.assertEqual(ids.pop(), "segment_count")
             self.assertEqual(ids.pop(), "combat_camera_config")
             self.assertEqual(ids[-2:], ["quality_mode", "creation_mode"])
             ids = ids[:-2]

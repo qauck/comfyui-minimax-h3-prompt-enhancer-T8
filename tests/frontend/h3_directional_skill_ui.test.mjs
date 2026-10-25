@@ -14,6 +14,12 @@ import {
     isDirectionalSkillEnabled,
 } from "../../web/js/h3_directional_skill_ui.mjs";
 
+// Field counts each enhancer serializes today. The H3 enhancer appends 分段数 /
+// 分段方式 for timeline segmentation after every published widget, so its count grew
+// by two; every earlier position and every other enhancer is unchanged.
+const SERIALIZED_LENGTHS = { h3: 40, seedance20: 38, music3: 38 };
+const serializedLength = (target) => SERIALIZED_LENGTHS[target];
+
 test("directional choices round-trip stable IDs and retain each model's format ownership", () => {
     for (const skill of DIRECTIONAL_SKILLS) {
         assert.equal(directionalSkillId(skill.label), skill.id);
@@ -52,7 +58,7 @@ test("author labels migrate legacy saved labels without changing IDs or workflow
             assert.equal(values.case_template, "saved case_template");
             const serialized = {};
             node.onSerialize(serialized);
-            assert.equal(serialized.widgets_values.length, 38);
+            assert.equal(serialized.widgets_values.length, serializedLength(target));
             assert.equal(serialized.widgets_values[35], skill.id);
             const restored = harness.values(harness.configure(serialized.widgets_values));
             assert.equal(restored.director_skill, skill.label);
@@ -60,7 +66,7 @@ test("author labels migrate legacy saved labels without changing IDs or workflow
     }
 });
 
-test("conditional authoring choices round-trip all 38 fields through the real enhancer hooks", async () => {
+test("conditional authoring choices round-trip every current field through the real enhancer hooks", async () => {
     for (const [filename, target] of [["minimax_h3_prompt_enhancer.js", "h3"], ["seedance20_prompt_enhancer.js", "seedance20"]]) {
         const harness = await enhancerHarness(filename, target);
         for (const id of ["drama_scene", "situational_drama", "zhenzhen_pov"]) {
@@ -74,7 +80,7 @@ test("conditional authoring choices round-trip all 38 fields through the real en
             assert.equal(values.case_template, "saved case_template");
             const serialized = {};
             node.onSerialize(serialized);
-            assert.equal(serialized.widgets_values.length, 38);
+            assert.equal(serialized.widgets_values.length, serializedLength(target));
             assert.equal(serialized.widgets_values[35], id);
             assert.deepEqual(harness.values(harness.configure(serialized.widgets_values)), values);
             const help = directionalSkillDescription(id, target);
@@ -104,7 +110,7 @@ test("POV examples and 36-field saves reload with the actual reordered widgets",
             });
             const serialized = {};
             node.onSerialize(serialized);
-            assert.equal(serialized.widgets_values.length, 38);
+            assert.equal(serialized.widgets_values.length, serializedLength(target));
             assert.equal(serialized.widgets_values[35], "zhenzhen_pov");
             assert.deepEqual(harness.values(harness.configure(serialized.widgets_values)), values);
         }
@@ -139,7 +145,7 @@ test("wushu examples retain 38 named fields and 36-field saves through real enha
             });
             const serialized = {};
             node.onSerialize(serialized);
-            assert.equal(serialized.widgets_values.length, 38);
+            assert.equal(serialized.widgets_values.length, serializedLength(target));
             assert.equal(serialized.widgets_values[35], "wushu_combat");
             assert.deepEqual(harness.values(harness.configure(serialized.widgets_values)), values);
         }
@@ -314,9 +320,9 @@ async function enhancerHarness(filename, target, { realNormalizer = false } = {}
     };
 }
 
-test("Hybrid aliases and linked prompts survive actual H3 normalizer and 38-field hooks", async () => {
+test("Hybrid aliases and linked prompts survive actual H3 normalizer and 40-field hooks", async () => {
     const harness = await enhancerHarness("minimax_h3_prompt_enhancer.js", "h3", { realNormalizer: true });
-    assert.equal(harness.names.length, 38);
+    assert.equal(harness.names.length, serializedLength("h3"));
     for (const filename of ["h3_hybrid_first_image.json", "h3_hybrid_last_image.json", "h3_hybrid_first_last_video.json"]) {
         const graph = JSON.parse(await readFile(new URL(`../../example_workflows/${filename}`, import.meta.url), "utf8"));
         const original = graph.nodes.find(n => n.type === "MiniMaxH3PromptEnhancerT8").widgets_values;
@@ -335,7 +341,7 @@ test("Hybrid aliases and linked prompts survive actual H3 normalizer and 38-fiel
                 assert.equal(harness.values(restored).task_type, "Hybrid（关键帧+参考混合生成）");
                 const data = {};
                 restored.onSerialize(data);
-                assert.equal(data.widgets_values.length, 38);
+                assert.equal(data.widgets_values.length, serializedLength("h3"));
                 assert.equal(data.widgets_values_named.task_type, "Hybrid（关键帧+参考混合生成）");
                 assert.equal(data.widgets_values[0], saved[0]);
                 assert.deepEqual(harness.values(harness.configure(data.widgets_values)), harness.values(restored));
@@ -391,6 +397,7 @@ test("all shipped H3/Seedance workflows retain native widget positions with opti
         MiniMaxH3PromptEnhancerT8: await enhancerHarness("minimax_h3_prompt_enhancer.js", "h3"),
         Seedance20PromptEnhancerT8: await enhancerHarness("seedance20_prompt_enhancer.js", "seedance20"),
     };
+    const nodeTargets = { MiniMaxH3PromptEnhancerT8: "h3", Seedance20PromptEnhancerT8: "seedance20" };
     let cameraExamples = 0;
     let checked = 0;
     for (const filename of (await readdir(directory)).filter(name => name.endsWith(".json"))) {
@@ -403,7 +410,7 @@ test("all shipped H3/Seedance workflows retain native widget positions with opti
             const first = harness.values(node);
             const serialized = {};
             node.onSerialize(serialized);
-            assert.equal(serialized.widgets_values.length, 38, filename);
+            assert.equal(serialized.widgets_values.length, serializedLength(nodeTargets[saved.type]), filename);
             assert.deepEqual(harness.values(harness.configure(serialized.widgets_values)), first, filename);
             assert.ok(!harness.names.includes("combat_camera_config"));
             if (saved.inputs.some(input => input.name === "combat_camera_config" && input.link != null)) {
@@ -425,7 +432,7 @@ test("all shipped H3/Seedance workflows retain native widget positions with opti
 
 test("H3 22/31/35/36 workflows preserve every field and fill only appended defaults", async () => {
     const harness = await enhancerHarness("minimax_h3_prompt_enhancer.js", "h3");
-    assert.equal(harness.names.length, 38);
+    assert.equal(harness.names.length, serializedLength("h3"));
     assert.equal(harness.names[35], "director_skill");
     for (const length of [22, 31, 35, 36]) {
         const saved = sampleValues(harness.names.slice(0, length));
@@ -458,7 +465,7 @@ test("H3 older 16/17/19/21 layouts still migrate before the appended skill", asy
 
 test("Seedance 26/35 published and runtime layouts preserve INT and provider positions", async () => {
     const harness = await enhancerHarness("seedance20_prompt_enhancer.js", "seedance20");
-    assert.equal(harness.names.length, 38);
+    assert.equal(harness.names.length, serializedLength("seedance20"));
     assert.equal(harness.names[35], "director_skill");
     for (const layout of [harness.fixture.publishedV1, harness.fixture.runtimeV1, harness.fixture.published, harness.names.slice(0, 35)]) {
         const names = [...layout];
@@ -496,7 +503,7 @@ test("both current workflows serialize stable skill IDs and reload without shift
         assert.equal(restored.director_skill, directionalSkillLabel("cinematic_gunfight"));
         const serialized = {};
         node.onSerialize(serialized);
-        assert.equal(serialized.widgets_values.length, 38);
+        assert.equal(serialized.widgets_values.length, serializedLength(target));
         assert.equal(serialized.widgets_values[35], "cinematic_gunfight");
         const again = harness.values(harness.configure([...serialized.widgets_values]));
         assert.equal(again.seed, 42);
@@ -507,7 +514,7 @@ test("both current workflows serialize stable skill IDs and reload without shift
     }
 });
 
-test("Ning round-trips through both enhancer hooks without changing the 38-value layout", async () => {
+test("Ning round-trips through both enhancer hooks without changing each node's current layout", async () => {
     for (const [filename, target] of [["minimax_h3_prompt_enhancer.js", "h3"], ["seedance20_prompt_enhancer.js", "seedance20"]]) {
         const harness = await enhancerHarness(filename, target);
         for (const length of [36, 38]) {
@@ -517,7 +524,7 @@ test("Ning round-trips through both enhancer hooks without changing the 38-value
             assert.equal(harness.values(node).director_skill, directionalSkillLabel("ning_wenwu"));
             const serialized = {};
             node.onSerialize(serialized);
-            assert.equal(serialized.widgets_values.length, 38);
+            assert.equal(serialized.widgets_values.length, serializedLength(target));
             assert.equal(serialized.widgets_values[35], "ning_wenwu");
             const restored = harness.values(harness.configure(serialized.widgets_values));
             assert.equal(restored.director_skill, directionalSkillLabel("ning_wenwu"));

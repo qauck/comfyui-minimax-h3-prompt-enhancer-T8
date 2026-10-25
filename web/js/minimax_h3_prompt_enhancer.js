@@ -120,6 +120,8 @@ const SERIALIZED_WIDGET_NAMES = [
     "director_skill",
     "quality_mode",
     "creation_mode",
+    "segment_count",
+    "segment_split_mode",
 ];
 const LOCAL_WIDGET_DEFAULTS = {
     local_model: "Qwen3.8-27B-Q4_K_M.gguf",
@@ -138,6 +140,8 @@ const LOCAL_WIDGET_DEFAULTS = {
     director_skill: "关闭 / Off",
     quality_mode: "保持原样 / Off",
     creation_mode: "原有编排 / Original",
+    segment_count: 1,
+    segment_split_mode: "平均分段（按分段数） / Even",
 };
 
 
@@ -813,7 +817,7 @@ app.registerExtension({
             let restoredValues = namedWidgetValueMap(
                 SERIALIZED_WIDGET_NAMES,
                 args[0]?.widgets_values,
-                [22, 31, 35, 36, SERIALIZED_WIDGET_NAMES.length],
+                [22, 31, 35, 36, 38, SERIALIZED_WIDGET_NAMES.length],
             );
             if (restoredValues) {
                 args[0] = {
@@ -822,7 +826,7 @@ app.registerExtension({
                         SERIALIZED_WIDGET_NAMES,
                         args[0].widgets_values,
                         LOCAL_WIDGET_DEFAULTS,
-                        [22, 31, 35, 36, SERIALIZED_WIDGET_NAMES.length],
+                        [22, 31, 35, 36, 38, SERIALIZED_WIDGET_NAMES.length],
                     ),
                 };
                 args[0].widgets_values[35] = directionalSkillLabel(args[0].widgets_values[35]);

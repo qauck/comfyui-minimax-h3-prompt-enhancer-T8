@@ -164,7 +164,7 @@ try {
   const h3QualityLabels = await import("../../web/js/h3_quality_ui.mjs");
   const h3Source = await (await fetch("../../web/js/minimax_h3_prompt_enhancer.js")).text();
   const savedNames = [...h3Source.match(/const SERIALIZED_WIDGET_NAMES = \[([\s\S]*?)\];/)[1].matchAll(/"([^"]+)"/g)].map(m => m[1]);
-  check(savedNames.length === 38, "Hybrid retains 38 serialized fields in browser");
+  check(savedNames.length === 40, "Hybrid retains 40 serialized fields in browser");
   function HybridReloadNode() {
     this.widgets = savedNames.map(name => ({ name, value: null }));
     const director = this.widgets.find(w => w.name === "director_skill");
@@ -193,7 +193,10 @@ try {
       const expected = [...values];
       expected[36] = h3QualityLabels.qualityLabel(values[36]);
       expected[37] = h3QualityLabels.creationLabel(values[37]);
-      check(JSON.stringify(serialized.widgets_values) === JSON.stringify(expected), "Hybrid 38 fields browser configure/serialize with existing quality labels and linked null");
+      const segmentFields = savedNames.slice(values.length);
+      check(JSON.stringify(segmentFields) === JSON.stringify(["segment_count", "segment_split_mode"]), "Hybrid appends only the two timeline-segment fields after every saved field");
+      expected.push(...segmentFields.map(name => n.widgets.find(w => w.name === name).value));
+      check(JSON.stringify(serialized.widgets_values) === JSON.stringify(expected), "Hybrid 40 fields browser configure/serialize with existing quality labels and linked null");
       check(serialized.widgets_values_named.task_type === values[1], "Hybrid native named map stays consistent");
       const again = new HybridReloadNode();
       again.onConfigure(serialized);

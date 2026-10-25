@@ -291,7 +291,9 @@ class HybridTests(unittest.TestCase):
             enhance.assert_not_called()
             self.assertEqual(nodes.recover_outputs(component,slot,6),stored)
             values.update(recovery_action="restore_last",relay_mode=nodes.RELAY)
-            self.assertEqual(tuple(nodes.MiniMaxH3PromptEnhancer.execute(**values).result), (*stored[:4],192,stored[5]))
+            # The stored six values are replayed byte-for-byte; the appended segment outputs,
+            # including the timeline preset, stay empty at the default segment_count of 1.
+            self.assertEqual(tuple(nodes.MiniMaxH3PromptEnhancer.execute(**values).result), (*stored[:4],192,stored[5],"","",""))
             enhance.assert_not_called()
 
     def test_metadata_independent_finite_and_private_fields_excluded(self):

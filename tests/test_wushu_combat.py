@@ -75,6 +75,50 @@ class WushuIntegrationTests(OfflineGuards, unittest.TestCase):
         expected.body = [node for node in expected.body if node not in removed]
         return expected
 
+    def without_segment_controls(self, method):
+        """Project the reviewed timeline-segment inputs and outputs out of the frozen schema.
+
+        The reviewed feature appends two inputs (segment_count, segment_split_mode) and three
+        outputs: h3_segments_json, h3_segments_text and, from the preset follow-up, the 9th
+        output h3_segments_preset (the same segments as a minimax-h3-timeline-preset document).
+        Nothing published earlier is renamed or reordered, so projecting these appended-only
+        entries out is what makes the frozen schema comparable again.
+        """
+        current = copy.deepcopy(method)
+        removed = {"inputs": 0, "outputs": 0}
+        for node in ast.walk(current):
+            if not isinstance(node, ast.keyword) or node.arg not in {"inputs", "outputs"} or not isinstance(node.value, ast.List):
+                continue
+
+            def belongs_to_segments(item):
+                if not isinstance(item, ast.Call):
+                    return False
+                first = item.args[0] if item.args else None
+                if isinstance(first, ast.Constant) and first.value in {"segment_count", "segment_split_mode"}:
+                    return True
+                return any(key.arg == "display_name" and isinstance(key.value, ast.Constant)
+                           and key.value.value in {"h3_segments_json", "h3_segments_text", "h3_segments_preset"}
+                           for key in item.keywords)
+
+            kept = [item for item in node.value.elts if not belongs_to_segments(item)]
+            removed[node.arg] += len(node.value.elts) - len(kept)
+            node.value.elts = kept
+        self.assertEqual(removed, {"inputs": 2, "outputs": 3})
+        return current
+
+    def without_segment_parameters(self, method):
+        """The node execute gains only the two timeline-segment keyword parameters."""
+        current = copy.deepcopy(method)
+        arguments = current.args
+        offset = len(arguments.args) - len(arguments.defaults)
+        keep = {index for index, argument in enumerate(arguments.args)
+                if argument.arg not in {"segment_count", "segment_split_mode"}}
+        dropped = len(arguments.args) - len(keep)
+        arguments.defaults = [default for index, default in enumerate(arguments.defaults) if (index + offset) in keep]
+        arguments.args = [argument for index, argument in enumerate(arguments.args) if index in keep]
+        self.assertEqual(dropped, 2)
+        return current
+
     def restore_frozen_reference_tooltip(self, method, path):
         """Only the reviewed video tooltip may differ inside the native schema."""
         current = copy.deepcopy(method)
@@ -168,10 +212,17 @@ class WushuIntegrationTests(OfflineGuards, unittest.TestCase):
                     for method in old_node.body:
                         if isinstance(method, ast.FunctionDef):
                             if method.name == "execute":
-                                self.assertEqual(ast.dump(project_speech_signature(new_methods[method.name].args)), ast.dump(method.args))
+                                arguments = new_methods[method.name].args
+                                if path == "nodes.py":
+                                    arguments = self.without_segment_parameters(new_methods[method.name]).args
+                                self.assertEqual(ast.dump(project_speech_signature(arguments)), ast.dump(method.args))
                             else:
-                                current_method = (self.restore_frozen_reference_tooltip(project_speech_schema(new_methods[method.name]), path)
-                                                  if method.name == "define_schema" else new_methods[method.name])
+                                current_method = new_methods[method.name]
+                                if method.name == "define_schema":
+                                    current_method = self.restore_frozen_reference_tooltip(current_method, path)
+                                    if path == "nodes.py":
+                                        current_method = self.without_segment_controls(current_method)
+                                    current_method = project_speech_schema(current_method)
                                 self.assertEqual(ast.dump(current_method), ast.dump(method), method.name)
 
     def test_old_widget_order_and_ui_are_frozen_except_reviewed_reload_fixes(self):
@@ -182,11 +233,17 @@ class WushuIntegrationTests(OfflineGuards, unittest.TestCase):
             current = project_strata_ui((ROOT / path).read_text(encoding="utf-8"))
             previous = frozen_bytes(path).decode("utf-8").replace("\r\n", "\n")
             pattern = r"const SERIALIZED_WIDGET_NAMES = \[[\s\S]*?\];"
-            self.assertEqual(re.search(pattern, current).group(), re.search(pattern, previous).group())
+            expected_names = re.search(pattern, previous).group()
+            if path == "web/js/minimax_h3_prompt_enhancer.js":
+                # The reviewed timeline-segment controls are appended to the contract.
+                expected_names = expected_names.rsplit("];", 1)[0] + '    "segment_count",\n    "segment_split_mode",\n];'
+            self.assertEqual(re.search(pattern, current).group(), expected_names)
             prefix = current.split("nodeType.prototype.onConfigure = function ()")[0]
             if path == "web/js/minimax_h3_prompt_enhancer.js":
                 for addition in ('    Hybrid: "Hybrid（关键帧+参考混合生成）",\n',
-                                 '                if (["hybrid", "Hybrid — 关键帧+参考混合生成"].includes(taskTypeWidget?.value)) taskTypeWidget.value = TASK_TYPE_LABELS.Hybrid;\n'):
+                                 '                if (["hybrid", "Hybrid — 关键帧+参考混合生成"].includes(taskTypeWidget?.value)) taskTypeWidget.value = TASK_TYPE_LABELS.Hybrid;\n',
+                                 '    "segment_count",\n    "segment_split_mode",\n',
+                                 '    segment_count: 1,\n    segment_split_mode: "平均分段（按分段数） / Even",\n'):
                     self.assertEqual(prefix.count(addition), 1)
                     prefix = prefix.replace(addition, "")
             self.assertEqual(prefix.replace("    syncNamedWidgetSerialization,\n", ""),

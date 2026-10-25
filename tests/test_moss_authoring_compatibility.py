@@ -1,5 +1,6 @@
 """Freeze the 1.36 node prefix and existing examples, with only MOSS opt-in edits."""
 from visual_style_baseline_projection import project_style_ast
+from segment_baseline_projection import project_segment_source
 import ast
 import asyncio
 from pathlib import Path
@@ -34,7 +35,7 @@ class AuthoringCompatibility(unittest.TestCase):
             name = path.relative_to(ROOT).as_posix()
             if name == "moss_image.py": continue  # explicit schema/message gates in test_moss_authoring
             if name in ("nodes.py", "seedance20.py"):
-                self.assertEqual(ast.dump(project_style_ast(path.read_text(encoding="utf-8"))), ast.dump(ast.parse(frozen(name))), name)
+                self.assertEqual(ast.dump(project_style_ast(project_segment_source(path.read_text(encoding="utf-8")))), ast.dump(ast.parse(frozen(name))), name)
             else:
                 self.assertEqual(path.read_bytes().replace(b"\r\n", b"\n"), frozen(name).replace(b"\r\n", b"\n"), name)
 

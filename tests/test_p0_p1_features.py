@@ -98,7 +98,9 @@ class P0P1FeatureTests(unittest.TestCase):
             [schema.node_id for schema in schemas[:3]],
             ["MiniMaxH3PromptEnhancerT8", "Seedance20PromptEnhancerT8", "MiniMaxMusic3PromptEnhancerT8"],
         )
-        self.assertEqual([item.display_name for item in schemas[0].outputs], ["enhanced_prompt", "global_prompt", "local_prompts", "time_ranges", "relay_length", "relay_report"])
+        # Append-only: the first six display names are unchanged and the preset port is added
+        # after the two segment ports introduced with the segment feature.
+        self.assertEqual([item.display_name for item in schemas[0].outputs], ["enhanced_prompt", "global_prompt", "local_prompts", "time_ranges", "relay_length", "relay_report", "h3_segments_json", "h3_segments_text", "h3_segments_preset"])
         self.assertEqual([item.display_name for item in schemas[1].outputs], ["enhanced_prompt"])
         self.assertEqual(
             [item.display_name for item in schemas[2].outputs],
@@ -135,8 +137,12 @@ class P0P1FeatureTests(unittest.TestCase):
             if schema.node_id == "MiniMaxH3PromptEnhancerT8":
                 self.assertEqual(prior_inputs[-1].id, "visual_marker_config")
                 prior_inputs = prior_inputs[:-1]
-            self.assertEqual([i.id for i in prior_inputs[-6:]], ["director_skill", "quality_mode", "creation_mode", "combat_camera_config", "speech_reference", "storyboard_director_config"])
-            inputs = prior_inputs[:-10] if schema.node_id == "MiniMaxH3PromptEnhancerT8" else prior_inputs[:-6]
+            tail = ["director_skill", "quality_mode", "creation_mode", "combat_camera_config"]
+            if schema.node_id == "MiniMaxH3PromptEnhancerT8":
+                tail += ["segment_count", "segment_split_mode"]
+            tail += ["speech_reference", "storyboard_director_config"]
+            self.assertEqual([i.id for i in prior_inputs[-len(tail):]], tail)
+            inputs = prior_inputs[:-(len(tail) + 4)] if schema.node_id == "MiniMaxH3PromptEnhancerT8" else prior_inputs[:-len(tail)]
             self.assertEqual(inputs[-2].id, "provider_config")
             self.assertEqual(inputs[-1].id, "character_performance_bible")
         self.assertEqual(schemas[2].inputs[-3].id, "provider_config")
@@ -148,7 +154,7 @@ class P0P1FeatureTests(unittest.TestCase):
 
     def test_serialized_widget_contracts_append_relay_after_original_31(self):
         expected = {
-            "minimax_h3_prompt_enhancer.js": 38,
+            "minimax_h3_prompt_enhancer.js": 40,
             "seedance20_prompt_enhancer.js": 38,
             "music3_prompt_enhancer.js": 38,
         }
@@ -158,11 +164,12 @@ class P0P1FeatureTests(unittest.TestCase):
             names = re.findall(r'^\s*"([A-Za-z0-9_]+)",?\s*$', block, re.MULTILINE)
             self.assertEqual(len(names), count, filename)
             self.assertEqual(len(names), len(set(names)), filename)
-            if filename != "music3_prompt_enhancer.js":
-                self.assertEqual(names[-3:], ["director_skill", "quality_mode", "creation_mode"])
             if filename == "minimax_h3_prompt_enhancer.js":
+                self.assertEqual(names[-5:], ["director_skill", "quality_mode", "creation_mode", "segment_count", "segment_split_mode"])
                 self.assertEqual(names[31:35], ["relay_mode", "relay_event_count", "relay_duration_seconds", "relay_time_ranges"])
                 self.assertEqual(names[22:31], ["local_model", "local_mmproj", "local_context_size", "local_max_tokens", "local_think_mode", "local_reasoning_effort", "local_video_sample_fps", "local_unload_policy", "local_comfy_memory_policy"])
+            elif filename != "music3_prompt_enhancer.js":
+                self.assertEqual(names[-3:], ["director_skill", "quality_mode", "creation_mode"])
 
     def test_new_request_options_are_appended_after_existing_function_parameters(self):
         h3_names = without_style_names(list(inspect.signature(core_nodes.enhance_prompt).parameters))

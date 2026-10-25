@@ -46,6 +46,62 @@ workflow switching, native subgraph ownership and deleted-node replacement. The
 two helpers and browser use zero model calls; loopback responses prove engineering
 contracts, not actual LLM compliance or rendered-video improvement.
 
+### 2026-10-24: additive H3 timeline segmentation
+
+Append only two controls to the H3 enhancer: `segment_count` (default `1`) and
+`分段方式 / Split mode` (default Even), after every published widget (the combat camera socket is the last
+widget they follow) and before the opt-in lazy sockets, and append `h3_segments_json` / `h3_segments_text` / `h3_segments_preset` after the
+six existing output ports. Input order, output order, the six original display names, the execute
+signature except its appended defaults, the published 31/35/38 arrays and the shipped
+example bytes stay frozen; `SegmentCount`/`SplitMode` are ordinary widgets with defaults so
+name-mapped loading fills them for the historical 16/17/19/21/22/31/35/36/38 layouts.
+No node, locale key, dependency, DOM panel or schema revision is added. `segment_count`
+`1` — the default — performs no split, so `enhanced_prompt` is byte-identical and all three new
+outputs are empty; the segmentation module runs on CPU only over the finished text and is
+never part of the paid request path, and a timeline it cannot honour returns
+`"status": "not_split"` instead of failing the node. Segments are derived output, not
+recovery state: a restored draft is segmented again from the stored prompt.
+
+`h3_segments_preset` is the same already-generated segments written as a
+`minimax-h3-timeline-preset` document matching the field layout of the reference preset under
+`ComfyUI/output/MiniMaxH3_Presets/`, including the per-entry key order `images`, `audios`,
+`prompt`, `startFrame`, `endFrame`. Its sampling and timeline fields are copied from that document
+and the canvas is written at `768x768` as this node's own default. It invents no prompt text, keeps
+`images` and `audios` empty because segmentation names no media, and its frame ranges are
+placeholders at that document's 24 fps:
+240 frames (10 seconds) per segment with each next segment starting 24 frames before the previous
+end, so every end exceeds its start and neighbours overlap by one second. No node, workflow or
+frontend reads this document back, so it adds no socket, link or widget surface.
+
+Actual frontend hooks exercise 40-field configure/serialize, the 36/38-value saved
+layouts, linked null text and repeat reload in both the VM harness and Chrome, which now
+also asserts that only the two segment fields are appended after every saved field.
+`tests/test_h3_segments.py` covers the reference and base field sets, exact-dialogue
+preservation, per-segment `[Shot N]`/`(Sx)` renumbering, `00:00.000` rebasing with
+preserved intervals, shot-aligned versus even boundaries, an `[Shot 1]` written as
+`At 00:00.000` being accepted as carrying no cut time (and never appearing in a segment)
+while a first shot opening at any later time is refused, the preset port's match with the reference
+document's fields, its `768x768` canvas default and per-entry key order, its 240-frame ranges overlapping by 24 frames with empty
+media lists, and an empty preset whenever no split happened,
+plus the scope guard that no other registered node carries these controls and the
+default-off guard that `1` keeps the six published outputs byte-identical and leaves all three
+appended ports empty.
+
+2026-10-24 gates: 828 Python tests with zero failures and the same 64 sandbox-blocked
+errors and three opt-in skips as the pre-change run measured against the frozen
+`nodes.py`; 54 frontend tests and the Chrome contract/performance baseline passed; 20
+example workflows, 29 candidate nodes and the archive CRC verified; `segment_count` is not
+present in any other node schema. Pure text splitting is not a paid API or rendered-video
+acceptance; no RunningHub deployment is claimed.
+
+Merged-tree re-check on the same date after the interactive rebase onto the published main:
+1251 Python tests with zero failures and only the same class of sandbox-blocked write errors
+and opt-in skips the environment produced before the merge, 146 frontend tests, 20 example
+workflows with the repository verification passing, and 38 candidate nodes with the archive
+CRC verified. The segment controls keep their position after the last published widget and
+before the opt-in lazy sockets, so the serialized widget count stays 40 and every earlier
+layout still resolves by name.
+
 ### 2026-10-23: opt-in MOSS authoring and visible character limit
 
 Retain the 27 MOSS names as an immutable prefix; append only `authoring_profile`

@@ -205,6 +205,41 @@ Semantic Versioning and match the versions published to the Comfy Registry.
 - Retain minimum ComfyUI 0.33 file/component video layouts and pin the frozen
   provider baseline in both CI workflows instead of comparing against HEAD.
 
+### Added
+
+- Segment one finished H3 prompt on the timeline it already contains. Append-only optional
+  `分段数（1=不分段） / Segments` (1–10, default 1) and `分段方式 / Split mode`
+  (`平均分段（按分段数） / Even`, `镜头对齐分段（不切镜头） / Shot-aligned`) follow every prior serialized
+  input, and `h3_segments_json`, `h3_segments_text` and `h3_segments_preset` are appended after the
+  six unchanged output slots.
+- Each segment is a complete standalone prompt: the task's full field set is repeated, only
+  `[Shot N]` and `(Sx)` labels are renumbered, the timeline restarts at `00:00.000`, and that
+  segment's own shot intervals are preserved. An `[Shot 1]` written as `At 00:00.000` names the
+  same instant as carrying no cut time, so that form is accepted and never appears in a segment,
+  while a first shot opening at any other time is reported instead of guessed. Shot-aligned cuts only at existing shot boundaries,
+  while Even keeps equal windows and can end a segment mid-shot; a segment that opens without its
+  source shot, opens on a scene transition, or carries no keyframe alignment line is reported as a
+  note in both segment outputs.
+- Deterministic CPU-only text work on the completed prompt: no additional model request, no
+  translation, no new facts, and exact dialogue, lyrics and visible text preserved. Default 1 keeps
+  `enhanced_prompt` byte-identical with all three new outputs empty, so saved 22/31/35/36/38-value
+  workflows are unchanged; a split the timeline cannot honour reports `"status": "not_split"`
+  instead of failing the node or discarding the paid draft. Segmentation is capped at 10 segments
+  over at most 3600 seconds and is not stored in a recovery record, so a restore re-segments the
+  stored prompt.
+- `h3_segments_preset` renders those same segments as a `minimax-h3-timeline-preset` document in the
+  shape of the reference preset under `ComfyUI/output/MiniMaxH3_Presets/`: that document's sampling
+  and timeline fields are carried over unchanged and its canvas is written at the node's 768×768
+  default, every entry carries only the
+  segment's own prompt with empty `images` and `audios`, and the frame ranges are placeholders
+  computed at the preset's 24 fps — 240 frames (10 seconds) per segment, each one starting 24 frames
+  before the previous one ends, so consecutive segments overlap by one second and every end exceeds
+  its start. Its `selection` and `canvas.generation_seconds` describe the first segment, as the
+  reference document's do for its own active segment. Nothing reads this text back into the node, and
+  a split that did not happen leaves the port empty.
+- Bilingual node help, the workflow compatibility matrix and both README feature lists describe the
+  same capability. No new dependency, node ID, socket rename or output reorder.
+
 ## [1.30.0] - 2026-10-06
 
 ### Added

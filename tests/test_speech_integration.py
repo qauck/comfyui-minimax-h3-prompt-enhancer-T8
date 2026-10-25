@@ -1,5 +1,6 @@
 """Speech wiring and frozen old paths; inference doubles are not ASR acceptance."""
 from visual_style_baseline_projection import without_style_signature, without_style_inputs
+from segment_baseline_projection import without_segment_inputs, without_segment_outputs
 import asyncio
 import copy
 import importlib
@@ -62,9 +63,10 @@ class SpeechIntegrationTests(unittest.TestCase):
             inputs = without_style_inputs(now.inputs)
             if module is h3:
                 self.assertEqual(inputs[-1].id, "visual_marker_config")
-                inputs = inputs[:-1]
+                inputs = without_segment_inputs(inputs)[:-1]
             self.assertEqual([x.as_dict() for x in inputs[:-2]], [x.as_dict() for x in old_schema.inputs])
-            self.assertEqual([x.as_dict() for x in now.outputs], [x.as_dict() for x in old_schema.outputs])
+            published = without_segment_outputs(now.outputs) if module is h3 else list(now.outputs)
+            self.assertEqual([x.as_dict() for x in published], [x.as_dict() for x in old_schema.outputs])
             self.assertEqual(inputs[-2].id, "speech_reference")
             self.assertTrue(inputs[-2].optional); self.assertTrue(inputs[-2].lazy)
         paths = subprocess.check_output(["git", "ls-tree", "-r", "--name-only", BASELINE, "--", "example_workflows"], cwd=GIT_ROOT, text=True).splitlines()
@@ -85,7 +87,9 @@ class SpeechIntegrationTests(unittest.TestCase):
             recovery = sysmodule(module.begin_recovery_record)
             slot = "speech-integration-restore-" + str(count)
             recovery.begin_recovery_record(cls.define_schema().node_id, slot, "fixture")
-            previous = ("previous completed prompt", "", "", "", 0, "") if count == 6 else ("previous completed prompt",)
+            # The H3 node publishes six ports and three appended segment ports; with the default
+            # segment_count of 1 the appended ports are empty.
+            previous = ("previous completed prompt", "", "", "", 0, "", "", "", "") if count == 6 else ("previous completed prompt",)
             recovery.complete_recovery_record(cls.define_schema().node_id, slot, previous[:1])
             with patch.object(module, name, side_effect=AssertionError("No model on restore")):
                 actual = cls.execute(**execute_inputs(module), recovery_action="restore_last", recovery_slot=slot,

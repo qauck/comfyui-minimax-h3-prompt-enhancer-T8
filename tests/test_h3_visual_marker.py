@@ -1,6 +1,7 @@
 """CPU authoring contracts. No model/video-benefit or downstream-binding claims."""
 import asyncio
 from visual_style_baseline_projection import without_style_signature, without_style_inputs, project_style_ast
+from segment_baseline_projection import project_segment_bytes, without_segment_inputs, without_segment_outputs
 import ast
 import copy
 import importlib
@@ -291,8 +292,9 @@ class VisualMarkerTests(unittest.TestCase):
         namespace = dict(vars(h3))
         exec(compile(ast.Module(body=[method], type_ignores=[]), "nodes.py", "exec"), namespace)
         old_schema = namespace["define_schema"](h3.MiniMaxH3PromptEnhancer)
-        self.assertEqual([x.as_dict() for x in without_style_inputs(schema.inputs)[:-1]], [x.as_dict() for x in old_schema.inputs])
-        self.assertEqual([x.as_dict() for x in schema.outputs], [x.as_dict() for x in old_schema.outputs])
+        published_inputs = without_segment_inputs(without_style_inputs(schema.inputs))
+        self.assertEqual([x.as_dict() for x in published_inputs[:-1]], [x.as_dict() for x in old_schema.inputs])
+        self.assertEqual([x.as_dict() for x in without_segment_outputs(schema.outputs)], [x.as_dict() for x in old_schema.outputs])
         # MOSS authoring has its own frozen 1.36 schema/request regression.
         for path in ("seedance20.py", "music3.py", "yue2.py", "qwen_image21.py",
                      "web/js/minimax_h3_prompt_enhancer.js"):
@@ -300,9 +302,13 @@ class VisualMarkerTests(unittest.TestCase):
             if path == "seedance20.py":
                 self.assertEqual(ast.dump(project_style_ast((ROOT/path).read_text(encoding="utf-8"))), ast.dump(ast.parse(old)), path)
             else:
-                self.assertEqual((ROOT/path).read_bytes().replace(b"\r\n", b"\n"), old.replace(b"\r\n", b"\n"), path)
-        self.assertEqual([x.id for x in without_style_inputs(schema.inputs)][-2:], ["storyboard_director_config", "visual_marker_config"])
-        self.assertEqual(len(schema.outputs), 6)
+                current = (ROOT/path).read_bytes().replace(b"\r\n", b"\n")
+                if path == "web/js/minimax_h3_prompt_enhancer.js":
+                    # The H3 timeline-segment controls are the only reviewed addition here.
+                    current = project_segment_bytes(current)
+                self.assertEqual(current, old.replace(b"\r\n", b"\n"), path)
+        self.assertEqual([x.id for x in without_segment_inputs(without_style_inputs(schema.inputs))][-2:], ["storyboard_director_config", "visual_marker_config"])
+        self.assertEqual(len(without_segment_outputs(schema.outputs)), 6)
         package = sys.modules[h3.__package__]
         extension = asyncio.run(package.comfy_entrypoint())
         nodes = asyncio.run(extension.get_node_list())

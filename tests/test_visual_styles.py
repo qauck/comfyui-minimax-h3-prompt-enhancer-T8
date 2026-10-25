@@ -2,6 +2,7 @@
 import ast
 import subprocess
 from visual_style_baseline_projection import project_style_ast
+from segment_baseline_projection import project_segment_source, without_segment_outputs
 import asyncio
 import copy
 import importlib
@@ -38,7 +39,7 @@ class VisualStyleTests(unittest.TestCase):
         for name in ('nodes.py', 'seedance20.py'):
             old = subprocess.check_output(['git', 'show', BASELINE + ':' + name], cwd=GIT_ROOT).decode('utf-8')
             current = (ROOT / name).read_text(encoding='utf-8')
-            self.assertEqual(ast.dump(project_style_ast(current)), ast.dump(ast.parse(old)), name)
+            self.assertEqual(ast.dump(project_style_ast(project_segment_source(current))), ast.dump(ast.parse(old)), name)
 
     def test_none_off_are_frozen_for_every_native_task_language_and_director(self):
         for module, filename, args, key, tasks in ((h3, 'nodes.py', h3_args, 'task_type', h3.TASK_TYPES),
@@ -63,7 +64,8 @@ class VisualStyleTests(unittest.TestCase):
             schema = cls.define_schema()
             self.assertEqual([v.id for v in schema.inputs[-2:]], SOCKETS)
             self.assertTrue(all(v.optional and v.lazy for v in schema.inputs[-2:]))
-            self.assertEqual(len(schema.outputs), 6 if module is h3 else 1)
+            published = without_segment_outputs(schema.outputs) if module is h3 else list(schema.outputs)
+            self.assertEqual(len(published), 6 if module is h3 else 1)
             self.assertEqual(cls.check_lazy_status(), [])
             self.assertEqual(cls.check_lazy_status(**dict.fromkeys(SOCKETS)), SOCKETS)
             self.assertEqual(cls.check_lazy_status(recovery_action='restore_last', **dict.fromkeys(SOCKETS)), [])

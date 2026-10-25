@@ -6,7 +6,7 @@ workflows use the current deterministic widget order.
 
 | Node ID | Current serialized widgets | Accepted 1.0.x layouts | Migration behavior | Stable outputs |
 | --- | ---: | --- | --- | --- |
-| `MiniMaxH3PromptEnhancerT8` | 38 | 16, 17, 19, or 21 values; also 22/31/35/36 | Preserves all prior 36 positions, including Relay and directional Skill. Appends quality Off and creation Original. A removed upload URL is not reused as a video URL. | Slot 0 `enhanced_prompt`; appended global/local/time/length/report |
+| `MiniMaxH3PromptEnhancerT8` | 40 | 16, 17, 19, or 21 values; also 22/31/35/36 | Preserves all prior 36 positions, including Relay and directional Skill. Appends quality Off and creation Original. Prior 22/31/35/36/38-value layouts keep their positions by name mapping and the two segment controls are appended last with their defaults. A removed upload URL is not reused as a video URL. | Slot 0 `enhanced_prompt`; appended global/local/time/length/report |
 | `Seedance20PromptEnhancerT8` | 38 | 23 or 25 values; also both published/runtime 26/35 and current 36 layouts | Maps historical values by name, preserving integer length, provider, seed, model and directional Skill. Appends quality Off and creation Original. A removed `openai_upload_url` is not reused as a video URL. | `enhanced_prompt` |
 | `MiniMaxMusic3PromptEnhancerT8` | 38 | Both published-order and ComfyUI runtime-order 31-value layouts | Detects the old layout from the API-mode position, maps values by widget name, then appends 1.1 local-model controls with defaults. | `lyrics`, `music_caption`, `music3_payload_json`, `enhancement_report_json` |
 | `QwenImage21PromptEnhancerT8` | 23 | Historical 20/22 layouts, key placeholders, missing seed controls, linked text and UI tails; new marked 23 layout | Preserves the original 22-field prefix and appends Classic/Edit-aware. A version marker or consistent named metadata distinguishes the new profile from an old button tail. Restores synchronously; deferred UI work cannot overwrite edits. | `rewritten_prompt`, `wh_ratio`, `qwen_image_request_json`, `enhancement_report_json` |
@@ -69,6 +69,23 @@ Compatibility invariants:
   returns empty Relay strings and length zero without another paid call. Relay recovery
   restores all six values and reconstitutes the integer length; normal one-output
   memory records remain supported. Switching mode cannot recover the other mode's record.
+
+- H3 timeline segmentation appends `segment_count` and `segment_split_mode` after every prior
+  serialized input, and appends `h3_segments_json`, `h3_segments_text` and `h3_segments_preset`
+  after the six existing outputs, whose indices, types and order are unchanged. Historical
+  22/31/35/36/38-value arrays are still read by widget name, so both new controls take their
+  defaults and no earlier value shifts. `segment_count` 1 leaves `enhanced_prompt` byte-identical
+  and all three new outputs empty; a split the timeline cannot honour returns the unchanged prompt
+  with `"status": "not_split"` instead of failing the node, and its preset output stays empty.
+  Segments are derived text limited to 10 groups over at most 3600 seconds, are not stored
+  in a recovery record, and a restore re-segments the stored prompt with the current settings.
+- `h3_segments_preset` is the same segment list as a `minimax-h3-timeline-preset` document, matching
+  the field layout of the reference preset under `ComfyUI/output/MiniMaxH3_Presets/`: its sampling
+  and timeline fields are carried over, the canvas is written at 768×768, every segment entry holds
+  only that segment's prompt
+  with empty `images` and `audios`, and the frame ranges are placeholders at 24 fps (240 frames per
+  segment, each one starting 24 frames before the previous ends) rather than measurements of generated
+  footage. Nothing reads this document back into the node, so it adds no compatibility surface.
 
 - Node IDs, categories, socket names, and output order do not change in 1.1.
 - Existing case-template human names and stable IDs resolve to the same case.

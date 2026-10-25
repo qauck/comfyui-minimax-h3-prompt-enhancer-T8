@@ -79,6 +79,13 @@ except ImportError:
     from combat_camera import T8CombatCameraConfigIO, resolve_combat_camera_config, combat_camera_instruction, camera_metadata
 
 try:
+    from .h3_segments import (SEGMENT_SCHEMA, MAX_SEGMENTS, SPLIT_EVEN, SPLIT_MODE_OPTIONS, SegmentSplitError,
+                             segments_json_text, segments_preset_json, segments_text, split_h3_prompt)
+except ImportError:
+    from h3_segments import (SEGMENT_SCHEMA, MAX_SEGMENTS, SPLIT_EVEN, SPLIT_MODE_OPTIONS, SegmentSplitError,
+                            segments_json_text, segments_preset_json, segments_text, split_h3_prompt)
+
+try:
     from .directional_skills import (DIRECTOR_OFF, DIRECTOR_OPTIONS, DirectionalSkillError,
         normalize_director_skill, prepare_director_skill, director_instruction, is_drama_skill, uses_authoring_contract, drama_authoring_instruction, drama_core_supplement,
         coordinated_performance_instruction, template_fact_lookup, director_metadata, preserve_director_on_repair)
@@ -2358,6 +2365,40 @@ def enhance_prompt(
             session.close()
 
 
+def _h3_segment_outputs(
+    prompt: str,
+    duration_seconds: Any,
+    segment_count: Any,
+    segment_split_mode: Any,
+    task_type: str,
+) -> tuple[str, str, str]:
+    """Split the finished prompt on its own timeline; the main output is never changed.
+
+    This is text work on the prompt that already exists: no generation, no translation,
+    no new facts. A split the timeline cannot honour is reported in the segment outputs
+    instead of failing the node, so the draft the request paid for is kept. The third
+    value is the same segments as a minimax-h3-timeline-preset with pseudo frame ranges.
+    """
+    try:
+        count = int(segment_count)
+    except (TypeError, ValueError):
+        count = 0
+    if count <= 1:
+        return "", "", ""
+    try:
+        report = split_h3_prompt(
+            prompt,
+            duration_seconds=float(duration_seconds),
+            segment_count=count,
+            task_type=task_type,
+            split_mode=segment_split_mode,
+        )
+    except (SegmentSplitError, TypeError, ValueError) as error:
+        unsplit = {"schema": SEGMENT_SCHEMA, "status": "not_split", "segment_count": 0, "error": str(error)}
+        return json.dumps(unsplit, ensure_ascii=False), f"{error}\n", ""
+    return segments_json_text(report), segments_text(report), segments_preset_json(report)
+
+
 class MiniMaxH3PromptEnhancer(io.ComfyNode):
     @classmethod
     def define_schema(cls):
@@ -2679,6 +2720,12 @@ class MiniMaxH3PromptEnhancer(io.ComfyNode):
                                default=CREATION_OFF, optional=True, tooltip="原有编排不变；因果优化在同一次生成中补动作衔接与状态继承，不新增规划请求，不覆盖原事实、台词、镜头数及结束状态。"),
                 T8CombatCameraConfigIO.Input("combat_camera_config", display_name="战斗运镜配置（可选） / Combat camera",
                                             optional=True, tooltip="连接 T8 战斗运镜配置；未连接保持原逻辑，可与表演导演叠加。"),
+                io.Int.Input("segment_count", display_name="分段数（1=不分段） / Segments", default=1, min=1,
+                             max=MAX_SEGMENTS, optional=True,
+                             tooltip="按已完成提示词自己的时间线自动分组。每段都是一条独立完整的H3提示词：六段结构照旧、镜头与说话人重新编号、每段从00:00开始。不重新生成、不翻译、不新增事实。1保持原行为，三个分段输出留空。跨段的人物身份与叙事连续性需要人工或下游工具核对。"),
+                io.Combo.Input("segment_split_mode", display_name="分段方式 / Split mode", options=list(SPLIT_MODE_OPTIONS),
+                               default=SPLIT_EVEN, optional=True,
+                               tooltip="平均分段保持请求的等分边界，可能把跨边界的镜头切断；镜头对齐分段只在提示词已有的真实切点分组，绝不切断镜头，各段时长随之不均。报告说明两种方式的代价。"),
                 SpeechReferenceIO.Input("speech_reference", display_name="语音／字幕参考（可选） / Speech reference", optional=True, lazy=True,
                     tooltip="连接 T8 语音转写／字幕参考；不连接保持原路径。转写不是音乐或说话人分析；云渠道会接收引用文字。"),
                 T8StoryboardDirectorConfigIO.Input("storyboard_director_config", display_name="分镜强化（可选·实验） / Storyboard director",
@@ -2695,7 +2742,10 @@ class MiniMaxH3PromptEnhancer(io.ComfyNode):
                      io.String.Output(display_name="local_prompts"),
                      io.String.Output(display_name="time_ranges"),
                      io.Int.Output(display_name="relay_length"),
-                     io.String.Output(display_name="relay_report")],
+                     io.String.Output(display_name="relay_report"),
+                     io.String.Output(display_name="h3_segments_json"),
+                     io.String.Output(display_name="h3_segments_text"),
+                     io.String.Output(display_name="h3_segments_preset")],
         )
 
     @classmethod
@@ -2784,6 +2834,8 @@ class MiniMaxH3PromptEnhancer(io.ComfyNode):
         quality_mode=QUALITY_OFF,
         creation_mode=CREATION_OFF,
         combat_camera_config=None,
+        segment_count=1,
+        segment_split_mode=SPLIT_EVEN,
         speech_reference=None,
         storyboard_director_config=None,
         visual_marker_config=None,
@@ -2796,7 +2848,12 @@ class MiniMaxH3PromptEnhancer(io.ComfyNode):
         if str(recovery_action or RECOVERY_ACTION_NORMAL) == RECOVERY_ACTION_RESTORE:
             try:
                 cached = recover_outputs("MiniMaxH3PromptEnhancerT8", recovery_slot, 6 if relay_enabled else 1)
-                return io.NodeOutput(*( (*cached[:4], int(cached[4]), cached[5]) if relay_enabled else (cached[0], "", "", "", 0, "") ))
+                restored = (*cached[:4], int(cached[4]), cached[5]) if relay_enabled else (cached[0], "", "", "", 0, "")
+                # Segments are derived text, so a restore re-segments the recovered prompt
+                # with the current segment settings instead of replaying an older split.
+                restored_duration = float(relay_duration_seconds or duration_seconds) if relay_enabled else float(duration_seconds)
+                return io.NodeOutput(*restored, *_h3_segment_outputs(
+                    restored[0], restored_duration, segment_count, segment_split_mode, _canonical_task_type(task_type)))
             except CompletionRecoveryError as error:
                 raise PromptEnhancerError(str(error)) from error
         relay_config = None
@@ -2962,12 +3019,16 @@ class MiniMaxH3PromptEnhancer(io.ComfyNode):
             raise
         complete_recovery_record("MiniMaxH3PromptEnhancerT8", recovery_slot, outputs if relay_enabled else (result,))
         diagnostic.complete("success")
+        # Segmentation runs after the paid draft is stored, so a split that the
+        # timeline cannot honour never costs the user the prompt generation produced.
+        segments = _h3_segment_outputs(outputs[0], duration_seconds, segment_count, segment_split_mode,
+                                      _canonical_task_type(task_type))
         if quality_mode != QUALITY_OFF or speech_reference is not None:
             summary = diagnostic.quality_summary()
             if speech_reference is not None:
                 summary["speech_reference_active"] = True
-            return io.NodeOutput(*outputs, ui={"t8_quality_status": [json.dumps(summary, ensure_ascii=False)]})
-        return io.NodeOutput(*outputs)
+            return io.NodeOutput(*outputs, *segments, ui={"t8_quality_status": [json.dumps(summary, ensure_ascii=False)]})
+        return io.NodeOutput(*outputs, *segments)
 
 
 class MiniMaxH3PromptEnhancerExtension(ComfyExtension):

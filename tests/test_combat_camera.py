@@ -165,7 +165,9 @@ class CombatCameraTests(unittest.TestCase):
             with patch.object(module, function, return_value="completed native prompt") as complete:
                 output = cls.execute(**execute_inputs(module), combat_camera_config=enabled())
             self.assertEqual(complete.call_args.kwargs["combat_camera_config"], enabled())
-            self.assertEqual(tuple(output.result), ("completed native prompt", "", "", "", 0, "") if module is h3 else ("completed native prompt",))
+            # The six published outputs are unchanged; the appended timeline-segment outputs
+            # (json / text / preset) stay empty because segment_count keeps its default of 1.
+            self.assertEqual(tuple(output.result), ("completed native prompt", "", "", "", 0, "", "", "", "") if module is h3 else ("completed native prompt",))
 
     def test_six_budget_local_and_cloud_build_paths_keep_same_config_and_call_count(self):
         for module, target, function in ((h3, "h3", h3.enhance_prompt), (sd, "seedance20", sd.enhance_seedance20_prompt)):
@@ -289,7 +291,9 @@ class CombatCameraTests(unittest.TestCase):
             with patch.object(module, function, side_effect=AssertionError("Recovery must not regenerate")):
                 result = cls.execute(**execute_inputs(module), recovery_slot=slot, recovery_action="restore_last",
                                      combat_camera_config={"schema_version": "future"})
-            self.assertEqual(tuple(result.result), ("previous paid result", "", "", "", 0, "") if module is h3 else ("previous paid result",))
+            # Recovery still replays the stored six values byte-for-byte; the three appended
+            # segment outputs are re-derived and empty at the default segment_count of 1.
+            self.assertEqual(tuple(result.result), ("previous paid result", "", "", "", 0, "", "", "", "") if module is h3 else ("previous paid result",))
             upload_name = "_upload_media_plan" if module is h3 else "_upload_seedance20_media_plan"
             with patch.object(module, upload_name, side_effect=AssertionError("No media before invalid config")), \
                     patch.object(module, "LocalQwenProvider", side_effect=AssertionError("No runtime before invalid config")):
@@ -329,9 +333,13 @@ class CombatCameraTests(unittest.TestCase):
             exec(compile(ast.Module(body=[old_schema], type_ignores=[]), filename, "exec"), namespace)
             old_inputs = [item.id for item in namespace["define_schema"](cls).inputs]
             current_inputs = without_style_names([item.id for item in cls.define_schema().inputs])
+            appended = ["combat_camera_config", "speech_reference", "storyboard_director_config"]
             if module is h3:
-                self.assertEqual(current_inputs.pop(), "visual_marker_config")
-            self.assertEqual(current_inputs, old_inputs + ["combat_camera_config", "speech_reference", "storyboard_director_config"])
+                # H3 additionally appends its timeline-segment controls after the camera socket,
+                # before the opt-in lazy sockets, so the style and speech order stays as published.
+                appended = ["combat_camera_config", "segment_count", "segment_split_mode",
+                            "speech_reference", "storyboard_director_config", "visual_marker_config"]
+            self.assertEqual(current_inputs, old_inputs + appended)
         package = sys.modules[h3.__package__]
         extension = asyncio.run(package.comfy_entrypoint())
         current_ids = [cls.define_schema().node_id for cls in asyncio.run(extension.get_node_list())]

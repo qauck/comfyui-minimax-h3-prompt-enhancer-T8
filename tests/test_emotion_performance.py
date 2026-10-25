@@ -243,10 +243,16 @@ class EmotionPerformanceTests(unittest.TestCase):
                 current=(ROOT / path).read_bytes().replace(b"\r\n", b"\n")
                 if path == "web/js/minimax_h3_prompt_enhancer.js":
                     for addition in ('    Hybrid: "Hybrid（关键帧+参考混合生成）",\n',
-                                     '                if (["hybrid", "Hybrid — 关键帧+参考混合生成"].includes(taskTypeWidget?.value)) taskTypeWidget.value = TASK_TYPE_LABELS.Hybrid;\n'):
+                                     '                if (["hybrid", "Hybrid — 关键帧+参考混合生成"].includes(taskTypeWidget?.value)) taskTypeWidget.value = TASK_TYPE_LABELS.Hybrid;\n',
+                                     '    "segment_count",\n    "segment_split_mode",\n',
+                                     '    segment_count: 1,\n    segment_split_mode: "平均分段（按分段数） / Even",\n'):
                         encoded=addition.encode("utf8")
                         self.assertEqual(current.count(encoded),1)
                         current=current.replace(encoded,b"")
+                    # The segment controls add one accepted historical layout length.
+                    extended = b"[22, 31, 35, 36, 38, SERIALIZED_WIDGET_NAMES.length],"
+                    self.assertEqual(current.count(extended), 2)
+                    current = current.replace(extended, b"[22, 31, 35, 36, SERIALIZED_WIDGET_NAMES.length],")
                 if path.startswith("web/js/"):
                     from strata_baseline_projection import project_strata_ui
                     current = project_strata_ui(current.decode("utf-8")).encode("utf-8")

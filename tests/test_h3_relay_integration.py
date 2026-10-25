@@ -37,7 +37,9 @@ class RelayIntegrationTests(unittest.TestCase):
     def test_normal_keeps_first_output_and_does_not_enable_relay(self):
         with patch.object(nodes, "enhance_prompt", return_value="unchanged") as completion:
             result = nodes.MiniMaxH3PromptEnhancer.execute(**self.inputs())
-        self.assertEqual(tuple(result.result), ("unchanged", "", "", "", 0, ""))
+        # Normal mode keeps the first output and leaves the relay sockets idle; the three
+        # appended timeline-segment outputs are empty while segment_count stays 1.
+        self.assertEqual(tuple(result.result), ("unchanged", "", "", "", 0, "", "", "", ""))
         self.assertNotIn("relay_config", completion.call_args.kwargs)
 
     def test_relay_execute_and_restore_preserve_integer_output(self):

@@ -351,8 +351,12 @@ class PerformanceDirectorTests(unittest.TestCase):
             if cls is nodes.MiniMaxH3PromptEnhancer:
                 self.assertEqual(prior_inputs[-1].id, "visual_marker_config")
                 prior_inputs = prior_inputs[:-1]
-            self.assertEqual([i.id for i in prior_inputs[-6:]], ["director_skill", "quality_mode", "creation_mode", "combat_camera_config", "speech_reference", "storyboard_director_config"])
-            inputs = prior_inputs[:-10] if cls is nodes.MiniMaxH3PromptEnhancer else prior_inputs[:-6]
+            tail = ["director_skill", "quality_mode", "creation_mode", "combat_camera_config"]
+            if cls is nodes.MiniMaxH3PromptEnhancer:
+                tail += ["segment_count", "segment_split_mode"]
+            tail += ["speech_reference", "storyboard_director_config"]
+            self.assertEqual([i.id for i in prior_inputs[-len(tail):]], tail)
+            inputs = prior_inputs[:-(len(tail) + 4)] if cls is nodes.MiniMaxH3PromptEnhancer else prior_inputs[:-len(tail)]
             self.assertEqual(inputs[-3].id, "performance_director_config")
             self.assertEqual(inputs[-2].id, "provider_config")
             self.assertEqual(inputs[-1].id, "character_performance_bible")

@@ -162,12 +162,16 @@ assert (p / "research_sources/tudou-emotion.lock.json").is_file()
 assert (p / "web/js/docs/T8PerformanceDirectorConfig/zh.md").is_file()
 assert camera.combat_camera_instruction(None) == ""
 assert camera.combat_camera_instruction(camera.build_combat_camera_config(), "h3")
-assert schemas[0].inputs[-6].id == schemas[1].inputs[-5].id == "combat_camera_config"
-assert schemas[0].inputs[-5].id == schemas[1].inputs[-4].id == "speech_reference"
-assert schemas[0].inputs[-4].id == schemas[1].inputs[-3].id == "storyboard_director_config"
-assert schemas[0].inputs[-4].lazy and schemas[1].inputs[-3].lazy
+# The segment controls sit after the camera socket and before the opt-in lazy sockets; the
+# reviewed speech, storyboard, visual-marker and style sockets keep their published order.
+assert [item.id for item in schemas[0].inputs[-8:-5]] == ["combat_camera_config", "segment_count", "segment_split_mode"]
+assert [item.id for item in schemas[1].inputs[-5:-2]] == ["combat_camera_config", "speech_reference", "storyboard_director_config"]
+assert schemas[0].inputs[-5].lazy and schemas[1].inputs[-3].lazy
+assert [item.id for item in schemas[0].inputs[-3:]] == ["visual_marker_config", "color_style_config", "creator_style_config"]
 assert [s.node_id for s in schemas[:3]] == ["MiniMaxH3PromptEnhancerT8", "Seedance20PromptEnhancerT8", "MiniMaxMusic3PromptEnhancerT8"]
-assert len(schemas[0].outputs) == 6 and len(schemas[1].outputs) == 1
+assert len(schemas[0].outputs) == 9 and len(schemas[1].outputs) == 1
+assert [output.display_name for output in schemas[0].outputs[:6]] == ["enhanced_prompt", "global_prompt", "local_prompts", "time_ranges", "relay_length", "relay_report"]
+assert [output.display_name for output in schemas[0].outputs[6:]] == ["h3_segments_json", "h3_segments_text", "h3_segments_preset"]
 h3 = sys.modules[spec.name + ".nodes"]
 hybrid = sys.modules[spec.name + ".h3_hybrid"]
 assert h3.TASK_TYPES == ["T2VA", "I2VA", "FL2VA", "L2VA", "Ref2VA", "Hybrid"]
@@ -179,6 +183,23 @@ plan = h3._validate_inputs("Preserve geometry.", "Hybrid", 8, "balanced", 0, "�
 assert hybrid.asset_roles(plan) == [{"label": "<Picture 1>", "role": "first_frame"}, {"label": "<Picture 2>", "role": "reference_image"}]
 assert (p / "docs/h3-hybrid.md").is_file()
 assert (p / "example_workflows/h3_hybrid_first_last_video.json").is_file()
+segments = sys.modules[spec.name + ".h3_segments"]
+segment_prompt = ("subject_definitions:\n<Subject 1>: clerk\n\nsummary:\ntwo shots at a kiosk\n\nretention_analysis:\n<Subject 1>: person\n\n"
+                  "detailed_description:\n[Shot 1] a clerk waits at the kiosk.\n\n[Shot 2] At 00:11.000, the door opens.\n\n"
+                  "overall_soundscape:\nN/A\n\nnon_diegetic_music:\nN/A")
+split = segments.split_h3_prompt(segment_prompt, duration_seconds=22, segment_count=2, task_type="Ref2VA")
+assert [(s["start_seconds"], s["end_seconds"], s["shot_map"][0]["segment_shot"], s["shot_map"][0]["segment_start_seconds"]) for s in split["segments"]] == [(0.0, 11.0, 1, 0.0), (11.0, 22.0, 1, 0.0)]
+assert all(s["carries_fields"] == ["subject_definitions", "summary", "retention_analysis", "detailed_description", "overall_soundscape", "non_diegetic_music"] for s in split["segments"])
+assert split["segments"][1]["prompt"].count("[Shot 1]") == 1 and "[Shot 2]" not in split["segments"][1]["prompt"]
+assert "[Shot 1]" in segments.segments_text(split) and json.loads(segments.segments_json_text(split))["schema"] == segments.SEGMENT_SCHEMA
+assert segments.MAX_SEGMENTS == 10 and segments.normalize_split_mode("镜头对齐分段（不切镜头） / Shot-aligned") == segments.SPLIT_SHOT_ALIGNED
+preset = json.loads(segments.segments_preset_json(split))
+assert [preset["format"], preset["schema_version"], preset["name"], preset["preset_type"]] == ["minimax-h3-timeline-preset", 1, "MiniMaxH3_Preset", "complete"]
+assert preset["canvas"] == {"width": 768, "height": 768, "generation_seconds": 10.0, "fps": 24}
+assert preset["timeline"]["segmentConfig"]["count"] == 2 and preset["timeline"]["segmentConfig"]["mode"] == "timeline"
+assert [(s["startFrame"], s["endFrame"], s["images"], s["audios"]) for s in preset["timeline"]["segmentConfig"]["segments"]] == [(0, 240, [], []), (216, 456, [], [])]
+assert [s["prompt"] for s in preset["timeline"]["segmentConfig"]["segments"]] == [s["prompt"] for s in split["segments"]]
+assert segments.segments_preset_json({"segments": []}) == "" and segments.preset_segment_frames(0) == []
 module = sys.modules[spec.name + ".directional_skills"]
 assert len(module.DIRECTOR_OPTIONS) == 9 and module.DIRECTOR_LABELS[module.DIRECTOR_OPTIONS[0]] == "none"
 for skill in ("drama_scene", "situational_drama", "zhenzhen_pov"):

@@ -285,7 +285,11 @@ class DirectionalSkillTests(unittest.TestCase):
             names = without_style_names([item.id for item in cls.define_schema().inputs])
             if module is h3:
                 self.assertEqual(names.pop(), "visual_marker_config")
-            self.assertEqual(names[-6:], ["director_skill", "quality_mode", "creation_mode", "combat_camera_config", "speech_reference", "storyboard_director_config"])
+            tail = ["director_skill", "quality_mode", "creation_mode", "combat_camera_config"]
+            if filename == "nodes.py":
+                tail += ["segment_count", "segment_split_mode"]
+            tail += ["speech_reference", "storyboard_director_config"]
+            self.assertEqual(names[-len(tail):], tail)
             source = subprocess.check_output(["git", "show", f"{BASELINE_COMMIT}:{filename}"], cwd=GIT_ROOT).decode("utf-8")
             definition = next(n for n in ast.parse(source).body if isinstance(n, ast.FunctionDef) and n.name == function)
             old_names = [n.arg for n in definition.args.args]
@@ -294,7 +298,16 @@ class DirectionalSkillTests(unittest.TestCase):
                 self.assertEqual(current.pop(), "visual_marker_config")
             self.assertEqual(current[:len(old_names)], old_names)
             self.assertEqual(current[len(old_names):], ["director_skill", "quality_mode", "creation_mode", "combat_camera_config", "speech_reference", "storyboard_director_config"])
-            self.assertEqual(len(cls.define_schema().outputs), 6 if filename == "nodes.py" else 1)
+            # Append-only output contract: the six published H3 ports stay first and the
+            # segment feature appends three string ports (json / text / timeline preset).
+            outputs = [item.display_name for item in cls.define_schema().outputs]
+            expected_output_count = 6 + 3 if filename == "nodes.py" else 1
+            self.assertEqual(len(outputs), expected_output_count)
+            if filename == "nodes.py":
+                self.assertEqual(outputs[:6],
+                                 ["enhanced_prompt", "global_prompt", "local_prompts", "time_ranges",
+                                  "relay_length", "relay_report"])
+                self.assertEqual(outputs[6:], ["h3_segments_json", "h3_segments_text", "h3_segments_preset"])
 
     def test_non_mapping_resource_metadata_is_wrapped_and_off_stays_independent(self):
         loaders = {_load_resource, sys.modules[h3.prepare_director_skill.__module__]._load_resource}
@@ -511,7 +524,14 @@ class DirectionalSkillTests(unittest.TestCase):
                         completion.reset_mock()
                         current = cls.execute(**inputs, director_skill="none")
                         actual = dict(completion.call_args.kwargs)
-                    self.assertEqual(tuple(current.result), tuple(baseline.result))
+                    baseline_result = tuple(baseline.result)
+                    current_result = tuple(current.result)
+                    self.assertEqual(current_result[:len(baseline_result)], baseline_result)
+                    if module is h3:
+                        # Only the appended timeline-segment outputs (json / text / preset) may
+                        # extend the result, and all three are empty while segmentation is off.
+                        self.assertEqual(current_result[len(baseline_result):], ("", "", ""))
+                        self.assertEqual(len(current_result), len(baseline_result) + 3)
                     self.assertNotIn("director_skill", actual)
                     for values in (expected, actual):
                         callback = values.pop("progress_callback")

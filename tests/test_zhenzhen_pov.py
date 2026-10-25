@@ -379,7 +379,9 @@ class PovQualityAndRecoveryTests(OfflineGuards, unittest.TestCase):
                 result = cls.execute(**execute_inputs(module), director_skill="future_unknown_selection",
                                      recovery_action="restore_last", recovery_slot=slot)
             actual = result["result"] if isinstance(result, dict) else result.result
-            expected = (*outputs, "", "", "", 0, "") if module is h3 else outputs
+            # Recovery keeps the historical six-value shape for H3; the three appended
+            # timeline-segment outputs stay empty at the default segment_count of 1.
+            expected = (*outputs, "", "", "", 0, "", "", "", "") if module is h3 else outputs
             self.assertEqual(tuple(actual), expected)
             self.assertEqual(recovery.recovery_status(component, slot)["creation_metadata"], metadata)
             filtered = recovery.safe_director_metadata({**metadata, "authoring_revision": "future", "source_version": "private", "prompt": "private"})
